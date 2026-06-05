@@ -45,6 +45,8 @@
             android:showOnLockScreen="true"
             android:turnScreenOn="true"/>
 
+        <activity android:name=".CallHistoryActivity" android:screenOrientation="portrait"/>
+
         <!-- Keeps WebSocket alive for incoming call notifications -->
         <service
             android:name=".CallNotificationService"

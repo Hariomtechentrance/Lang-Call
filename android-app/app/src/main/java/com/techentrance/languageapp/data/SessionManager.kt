@@ -33,11 +33,17 @@ class SessionManager(context: Context) {
         get() = prefs.getString(KEY_SERVER_URL, null)
         set(v) = prefs.edit().putString(KEY_SERVER_URL, v).apply()
 
+    var userId: Int?
+        get() = prefs.getInt(KEY_USER_ID, -1).takeIf { it != -1 }
+        set(v) = if (v == null) prefs.edit().remove(KEY_USER_ID).apply()
+                 else prefs.edit().putInt(KEY_USER_ID, v).apply()
+
     val isLoggedIn: Boolean get() = token != null
     val bearerToken: String get() = "Bearer ${token.orEmpty()}"
 
     fun save(response: TokenResponse) {
         token = response.access_token
+        userId = response.user.id
         userName = response.user.name
         userEmail = response.user.email
         userPhone = response.user.phone
@@ -48,6 +54,7 @@ class SessionManager(context: Context) {
 
     companion object {
         private const val KEY_TOKEN = "token"
+        private const val KEY_USER_ID = "user_id"
         private const val KEY_NAME = "name"
         private const val KEY_EMAIL = "email"
         private const val KEY_PHONE = "phone"

@@ -154,6 +154,19 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- CALL HISTORY BUTTON -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCallHistory"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="📋  Call History"
+                android:textSize="14sp"
+                app:cornerRadius="10dp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                app:strokeColor="@color/purple_700"
+                android:textColor="@color/purple_700"
+                android:layout_marginBottom="14dp"/>
+
             <!-- PHONE NUMBER CARD -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"

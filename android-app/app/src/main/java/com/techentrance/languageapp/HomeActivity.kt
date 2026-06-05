@@ -53,6 +53,7 @@ class HomeActivity : AppCompatActivity() {
         binding.btnSavePhone.setOnClickListener { savePhone() }
         binding.btnSaveLanguage.setOnClickListener { saveLanguage() }
         binding.btnSettings.setOnClickListener { showServerUrlDialog() }
+        binding.btnCallHistory.setOnClickListener { startActivity(Intent(this, CallHistoryActivity::class.java)) }
         binding.btnLogout.setOnClickListener { confirmLogout() }
     }
 
@@ -157,10 +158,18 @@ class HomeActivity : AppCompatActivity() {
                 if (resp.isSuccessful && resp.body() != null) {
                     val call = resp.body()!!
                     binding.tvCallStatus.text = call.message
+                    // Look up callee user to get their ID for call record saving
+                    var calleeId = -1
+                    try {
+                        val userResp = RetrofitClient.api.findByPhone(session.bearerToken, phone)
+                        if (userResp.isSuccessful) calleeId = userResp.body()?.id ?: -1
+                    } catch (_: Exception) {}
                     startActivity(Intent(this@HomeActivity, CallActivity::class.java).apply {
                         putExtra(CallActivity.EXTRA_ROOM_ID, call.room_id)
                         putExtra(CallActivity.EXTRA_LANGUAGE, language)
                         putExtra(CallActivity.EXTRA_CALLEE_NAME, call.callee_name)
+                        putExtra(CallActivity.EXTRA_CALLEE_ID, calleeId)
+                        putExtra(CallActivity.EXTRA_CALLEE_LANGUAGE, call.callee_language)
                     })
                 } else {
                     val msg = parseError(resp.errorBody()?.string())

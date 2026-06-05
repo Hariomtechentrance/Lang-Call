@@ -246,6 +246,62 @@ def get_pending_calls(
     ]}
 
 
+@app.post("/call/record")
+def save_call_record(
+    payload: schemas.CallRecordRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Called by the client when a call ends to log it in history."""
+    from datetime import datetime, timezone
+    record = models.CallRecord(
+        room_id=payload.room_id,
+        caller_id=payload.caller_id,
+        callee_id=payload.callee_id,
+        caller_name=payload.caller_name,
+        callee_name=payload.callee_name,
+        caller_language=payload.caller_language,
+        callee_language=payload.callee_language,
+        duration_seconds=payload.duration_seconds,
+        ended_at=datetime.now(timezone.utc),
+    )
+    db.add(record)
+    db.commit()
+    return {"status": "saved"}
+
+
+@app.get("/call/history")
+def get_call_history(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the last 50 calls the current user was part of."""
+    records = (
+        db.query(models.CallRecord)
+        .filter(
+            (models.CallRecord.caller_id == current_user.id) |
+            (models.CallRecord.callee_id == current_user.id)
+        )
+        .order_by(models.CallRecord.started_at.desc())
+        .limit(50)
+        .all()
+    )
+    result = []
+    for r in records:
+        is_caller = r.caller_id == current_user.id
+        result.append({
+            "id": r.id,
+            "room_id": r.room_id,
+            "other_name": r.callee_name if is_caller else r.caller_name,
+            "other_language": r.callee_language if is_caller else r.caller_language,
+            "my_language": r.caller_language if is_caller else r.callee_language,
+            "direction": "outgoing" if is_caller else "incoming",
+            "duration_seconds": r.duration_seconds,
+            "started_at": r.started_at.isoformat() if r.started_at else "",
+        })
+    return {"history": result}
+
+
 @app.post("/call/answer/{call_id}")
 def answer_call(
     call_id: int,
@@ -357,6 +413,15 @@ async def ws_call(
     room[f"lang_{slot}"] = language
     logger.info(f"Room {room_id}: {slot} joined ({language})")
     await websocket.send_text(json.dumps({"type": "joined", "slot": slot, "language": language}))
+
+    # Notify the other participant that their peer has arrived
+    if slot == "user_b":
+        peer_ws: Optional[WebSocket] = room.get("user_a")
+        if peer_ws:
+            try:
+                await peer_ws.send_text(json.dumps({"type": "peer_joined"}))
+            except Exception:
+                pass
 
     try:
         while True:

@@ -28,3 +28,19 @@ class PendingCall(Base):
     callee_id = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     answered = Column(Boolean, default=False)
+
+
+class CallRecord(Base):
+    __tablename__ = "call_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(String, nullable=False, index=True)
+    caller_id = Column(Integer, nullable=False)
+    callee_id = Column(Integer, nullable=False)
+    caller_name = Column(String, nullable=False)
+    callee_name = Column(String, nullable=False)
+    caller_language = Column(String, nullable=False)
+    callee_language = Column(String, nullable=False)
+    duration_seconds = Column(Integer, default=0)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    ended_at = Column(DateTime(timezone=True), nullable=True)

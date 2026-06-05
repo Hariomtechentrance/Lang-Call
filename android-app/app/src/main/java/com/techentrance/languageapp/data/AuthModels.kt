@@ -57,6 +57,32 @@ data class PendingCallsResponse(
     val calls: List<PendingCall>,
 )
 
+data class CallRecordRequest(
+    val room_id: String,
+    val caller_id: Int,
+    val callee_id: Int,
+    val caller_name: String,
+    val callee_name: String,
+    val caller_language: String,
+    val callee_language: String,
+    val duration_seconds: Int = 0,
+)
+
+data class CallHistoryItem(
+    val id: Int,
+    val room_id: String,
+    val other_name: String,
+    val other_language: String,
+    val my_language: String,
+    val direction: String,        // "incoming" or "outgoing"
+    val duration_seconds: Int,
+    val started_at: String,
+)
+
+data class CallHistoryResponse(
+    val history: List<CallHistoryItem>,
+)
+
 val INDIAN_LANGUAGES = listOf(
     "hindi", "kannada", "tamil", "telugu", "bengali",
     "marathi", "gujarati", "malayalam", "punjabi",

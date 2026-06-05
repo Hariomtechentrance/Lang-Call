@@ -42,4 +42,15 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("callId") callId: Int,
     ): Response<Map<String, String>>
+
+    @POST("call/record")
+    suspend fun saveCallRecord(
+        @Header("Authorization") token: String,
+        @Body body: CallRecordRequest,
+    ): Response<Map<String, String>>
+
+    @GET("call/history")
+    suspend fun getCallHistory(
+        @Header("Authorization") token: String,
+    ): Response<CallHistoryResponse>
 }

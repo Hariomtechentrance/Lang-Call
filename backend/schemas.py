@@ -49,3 +49,14 @@ class CallResponse(BaseModel):
     callee_name: str
     callee_language: str
     message: str
+
+
+class CallRecordRequest(BaseModel):
+    room_id: str
+    caller_id: int
+    callee_id: int
+    caller_name: str
+    callee_name: str
+    caller_language: str
+    callee_language: str
+    duration_seconds: int = 0
