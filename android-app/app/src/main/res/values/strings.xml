@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LangCall</string>
+    <string name="hint_room_id">Enter Room ID</string>
+    <string name="label_your_language">Your Language</string>
+    <string name="btn_connect">Connect to Room</string>
+    <string name="btn_start_call">Start Call</string>
+    <string name="btn_end_call">End Call</string>
+    <string name="status_not_connected">Not connected</string>
+    <string name="live_transcript">Live Transcript</string>
+    <string name="transcript_placeholder">Waiting for speech…</string>
+    <string name="title_app">Language Call Translator</string>
+    <string name="subtitle_app">Speak your language, hear theirs</string>
+</resources>

@@ -1,0 +1,25 @@
+# ── Backend ──────────────────────────────────────────
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/.env
+backend/langcall.db
+backend/*.db-journal
+backend/venv/
+backend/.venv/
+
+# ── Android ──────────────────────────────────────────
+android-app/.gradle/
+android-app/local.properties
+android-app/app/build/
+android-app/build/
+android-app/**/*.iml
+android-app/.idea/
+android-app/captures/
+android-app/.externalNativeBuild/
+android-app/.cxx/
+android-app/keystore.jks
+
+# ── General ──────────────────────────────────────────
+.DS_Store
+*.log

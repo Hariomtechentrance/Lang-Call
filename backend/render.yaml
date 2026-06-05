@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: langcall-api
+    env: python
+    region: singapore        # Closest free region to India
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: langcall-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true  # Render auto-generates a secure random key
+
+databases:
+  - name: langcall-db
+    databaseName: langcall
+    user: langcall_user
+    plan: free               # Free for 90 days, then recreate or upgrade
