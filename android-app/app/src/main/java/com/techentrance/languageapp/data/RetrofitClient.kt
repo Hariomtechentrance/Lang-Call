@@ -7,8 +7,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
-    // Default: emulator → Mac localhost. On real devices, change via Settings in the app.
-    const val DEFAULT_SERVER = "http://10.0.2.2:8000"
+    // Production server on Render — works on any device worldwide, no setup needed.
+    const val DEFAULT_SERVER = "https://lang-call.onrender.com"
 
     private var currentServer: String = DEFAULT_SERVER
     private var _api: ApiService? = null
