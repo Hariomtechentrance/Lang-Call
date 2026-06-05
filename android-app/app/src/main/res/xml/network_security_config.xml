@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration for LangCall
+  - All traffic to the production Render server (lang-call.onrender.com) MUST use HTTPS/WSS
+  - Plain HTTP is only allowed for local development IPs (emulator, LAN)
+  - System CAs are trusted; no user-installed CAs are accepted (prevents MITM via installed certificates)
+-->
+<network-security-config>
+
+    <!-- Default: HTTPS only, trust only system CAs (no user-installed root certs) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+    <!-- Allow plain HTTP only for local development -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Android emulator host -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- Loopback -->
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- Common LAN ranges for same-WiFi testing -->
+        <domain includeSubdomains="false">192.168.1.1</domain>
+        <domain includeSubdomains="false">192.168.0.1</domain>
+    </domain-config>
+
+</network-security-config>

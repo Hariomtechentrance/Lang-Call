@@ -43,6 +43,11 @@ interface ApiService {
         @Path("callId") callId: Int,
     ): Response<Map<String, String>>
 
+    @POST("auth/logout")
+    suspend fun logout(
+        @Header("Authorization") token: String,
+    ): Response<Map<String, String>>
+
     @POST("call/record")
     suspend fun saveCallRecord(
         @Header("Authorization") token: String,

@@ -1,5 +1,6 @@
 package com.techentrance.languageapp.data
 
+import com.techentrance.languageapp.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -40,7 +41,10 @@ object RetrofitClient {
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                // NONE in release — never log tokens or passwords to logcat
+                // BASIC in debug — shows URL + status code only, no headers or body
+                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
+                        else HttpLoggingInterceptor.Level.NONE
             })
             .build()
         return Retrofit.Builder()

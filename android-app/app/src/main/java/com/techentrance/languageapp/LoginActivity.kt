@@ -11,6 +11,7 @@ import com.techentrance.languageapp.data.RetrofitClient
 import com.techentrance.languageapp.data.SessionManager
 import com.techentrance.languageapp.databinding.ActivityLoginBinding
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class LoginActivity : AppCompatActivity() {
 
@@ -32,11 +33,14 @@ class LoginActivity : AppCompatActivity() {
 
     private fun doLogin() {
         val email = binding.etEmail.text.toString().trim()
-        val password = binding.etPassword.text.toString().trim()
+        // Never trim passwords — the user may have intentionally included spaces
+        val password = binding.etPassword.text.toString()
 
-        if (email.isEmpty() || password.isEmpty()) {
-            Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show()
-            return
+        if (email.isEmpty()) {
+            Toast.makeText(this, "Enter your email", Toast.LENGTH_SHORT).show(); return
+        }
+        if (password.isEmpty()) {
+            Toast.makeText(this, "Enter your password", Toast.LENGTH_SHORT).show(); return
         }
 
         setLoading(true)
@@ -48,13 +52,23 @@ class LoginActivity : AppCompatActivity() {
                     startActivity(Intent(this@LoginActivity, HomeActivity::class.java))
                     finish()
                 } else {
-                    Toast.makeText(this@LoginActivity, "Invalid email or password", Toast.LENGTH_SHORT).show()
+                    // Show the exact server message (e.g. remaining attempts, lockout duration)
+                    Toast.makeText(this@LoginActivity, parseError(response.errorBody()?.string()), Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 Toast.makeText(this@LoginActivity, "Cannot connect to server", Toast.LENGTH_SHORT).show()
             } finally {
                 setLoading(false)
             }
+        }
+    }
+
+    private fun parseError(body: String?): String {
+        if (body.isNullOrEmpty()) return "Login failed"
+        return try {
+            JSONObject(body).getString("detail")
+        } catch (_: Exception) {
+            body
         }
     }
 

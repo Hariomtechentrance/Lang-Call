@@ -12,9 +12,14 @@ class User(Base):
     phone = Column(String, unique=True, index=True, nullable=True)
     password_hash = Column(String, nullable=False)
     preferred_language = Column(String, default="hindi")
-    fcm_token = Column(String, nullable=True)       # Firebase push token (optional)
+    fcm_token = Column(String, nullable=True)
     is_online = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Security fields
+    token_version = Column(Integer, default=0, nullable=False)          # incremented on logout to invalidate all old tokens
+    failed_login_attempts = Column(Integer, default=0, nullable=False)  # brute-force counter
+    locked_until = Column(DateTime(timezone=True), nullable=True)       # set for 15 min after 5 failures
 
 
 class PendingCall(Base):

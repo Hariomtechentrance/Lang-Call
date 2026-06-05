@@ -9,6 +9,7 @@ import androidx.lifecycle.lifecycleScope
 import com.techentrance.languageapp.data.*
 import com.techentrance.languageapp.databinding.ActivityRegisterBinding
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class RegisterActivity : AppCompatActivity() {
 
@@ -22,7 +23,6 @@ class RegisterActivity : AppCompatActivity() {
         supportActionBar?.hide()
         session = SessionManager(this)
 
-        // Populate language spinner with all Indian languages
         val labels = INDIAN_LANGUAGES.map { LANGUAGE_LABELS[it] ?: it }
         binding.spinnerLanguage.adapter =
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
@@ -35,17 +35,29 @@ class RegisterActivity : AppCompatActivity() {
         val name = binding.etName.text.toString().trim()
         val email = binding.etEmail.text.toString().trim()
         val phone = binding.etPhone.text.toString().trim().ifEmpty { null }
-        val password = binding.etPassword.text.toString().trim()
+        // Do NOT trim password — spaces can be intentional
+        val password = binding.etPassword.text.toString()
         val langIndex = binding.spinnerLanguage.selectedItemPosition
         val language = INDIAN_LANGUAGES[langIndex]
 
-        if (name.isEmpty() || email.isEmpty() || password.isEmpty()) {
-            Toast.makeText(this, "Please fill name, email and password", Toast.LENGTH_SHORT).show()
-            return
+        // ── Client-side validation (also validated server-side) ─────────────
+        if (name.length < 2) {
+            showError("Name must be at least 2 characters"); return
         }
-        if (password.length < 6) {
-            Toast.makeText(this, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
-            return
+        if (email.isEmpty() || !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            showError("Enter a valid email address"); return
+        }
+        if (password.length < 8) {
+            showError("Password must be at least 8 characters"); return
+        }
+        if (!password.any { it.isDigit() }) {
+            showError("Password must contain at least one number (e.g. myPass1)"); return
+        }
+        if (!password.any { it.isLetter() }) {
+            showError("Password must contain at least one letter"); return
+        }
+        if (phone != null && !phone.matches(Regex("^\\+?[0-9]{7,15}$"))) {
+            showError("Phone number must be 7-15 digits (optionally starting with +)"); return
         }
 
         setLoading(true)
@@ -60,14 +72,33 @@ class RegisterActivity : AppCompatActivity() {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     })
                 } else {
-                    val msg = response.errorBody()?.string() ?: "Registration failed"
-                    Toast.makeText(this@RegisterActivity, msg, Toast.LENGTH_LONG).show()
+                    showError(parseError(response.errorBody()?.string()))
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@RegisterActivity, "Cannot connect to server. Is the backend running?", Toast.LENGTH_LONG).show()
+                showError("Cannot connect to server. Is the backend running?")
             } finally {
                 setLoading(false)
             }
+        }
+    }
+
+    private fun showError(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    }
+
+    private fun parseError(body: String?): String {
+        if (body.isNullOrEmpty()) return "Registration failed"
+        return try {
+            val json = JSONObject(body)
+            // FastAPI validation errors come as {"detail": [{"msg": "..."}]} or {"detail": "..."}
+            val detail = json.get("detail")
+            if (detail is org.json.JSONArray && detail.length() > 0) {
+                detail.getJSONObject(0).optString("msg", body)
+            } else {
+                detail.toString()
+            }
+        } catch (_: Exception) {
+            body
         }
     }
 

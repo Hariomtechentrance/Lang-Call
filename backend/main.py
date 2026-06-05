@@ -20,8 +20,10 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -31,7 +33,9 @@ from sqlalchemy.orm import Session
 
 import models
 import schemas
-from auth import create_token, decode_token_user_id, get_current_user, hash_password, verify_password
+from auth import (create_token, decode_token_user_id, get_current_user,
+                   hash_password, verify_password, validate_password_strength,
+                   MAX_LOGIN_ATTEMPTS, LOCKOUT_MINUTES)
 from database import Base, engine, get_db
 from languages import LANGUAGE_NAMES, is_valid
 from stt_service import transcribe_audio
@@ -59,6 +63,12 @@ def run_migrations():
         additions.append("ALTER TABLE users ADD COLUMN fcm_token VARCHAR")
     if "is_online" not in existing:
         additions.append("ALTER TABLE users ADD COLUMN is_online BOOLEAN DEFAULT FALSE")
+    if "token_version" not in existing:
+        additions.append("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0")
+    if "failed_login_attempts" not in existing:
+        additions.append("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
+    if "locked_until" not in existing:
+        additions.append("ALTER TABLE users ADD COLUMN locked_until TIMESTAMP WITH TIME ZONE")
     if additions:
         with engine.connect() as conn:
             for sql in additions:
@@ -82,6 +92,16 @@ notify_sockets: Dict[int, WebSocket] = {}
 
 # ───────────────────────── HELPERS ─────────────────────────
 
+_PHONE_RE = re.compile(r"^\+?[0-9]{7,15}$")
+
+def normalize_phone(raw: str) -> str:
+    """Strip spaces/dashes and validate basic format.  Raises 400 on bad input."""
+    clean = re.sub(r"[\s\-\(\)]", "", raw.strip())
+    if not _PHONE_RE.match(clean):
+        raise HTTPException(400, "Invalid phone number format (digits only, 7-15 chars, optional leading +)")
+    return clean
+
+
 def make_room_id(phone_a: str, phone_b: str) -> str:
     """Deterministic room ID from two phone numbers + timestamp shard."""
     phones = sorted([phone_a.strip(), phone_b.strip()])
@@ -103,33 +123,100 @@ async def push_notification(user_id: int, payload: dict):
 
 @app.post("/auth/register", response_model=schemas.TokenResponse, status_code=201)
 def register(payload: schemas.UserRegister, db: Session = Depends(get_db)):
-    if db.query(models.User).filter(models.User.email == payload.email).first():
+    # Server-side validation (cannot be bypassed by skipping the app)
+    validate_password_strength(payload.password)
+
+    # Normalise email to lowercase
+    email = payload.email.strip().lower()
+
+    if db.query(models.User).filter(models.User.email == email).first():
         raise HTTPException(400, "Email already registered")
+
+    phone = None
     if payload.phone:
-        if db.query(models.User).filter(models.User.phone == payload.phone).first():
+        phone = normalize_phone(payload.phone)
+        if db.query(models.User).filter(models.User.phone == phone).first():
             raise HTTPException(400, "Phone number already registered")
 
     user = models.User(
-        name=payload.name,
-        email=payload.email,
-        phone=payload.phone,
+        name=payload.name.strip(),
+        email=email,
+        phone=phone,
         password_hash=hash_password(payload.password),
         preferred_language=payload.preferred_language,
+        token_version=0,
+        failed_login_attempts=0,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return schemas.TokenResponse(access_token=create_token(user.id),
-                                  user=schemas.UserResponse.model_validate(user))
+    logger.info(f"New user registered: id={user.id} email={email}")
+    return schemas.TokenResponse(
+        access_token=create_token(user.id, user.token_version),
+        user=schemas.UserResponse.model_validate(user),
+    )
 
 
 @app.post("/auth/login", response_model=schemas.TokenResponse)
 def login(payload: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    email = payload.email.strip().lower()
+    user = db.query(models.User).filter(models.User.email == email).first()
+
+    # ── Account lockout check ────────────────────────────────────────────────
+    if user and user.locked_until:
+        if datetime.now(timezone.utc) < user.locked_until.replace(tzinfo=timezone.utc):
+            mins_left = int((user.locked_until.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).total_seconds() / 60) + 1
+            raise HTTPException(
+                429,
+                f"Too many failed attempts. Account locked for {mins_left} more minute(s)."
+            )
+        else:
+            # Lockout expired — reset
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            db.commit()
+
+    # ── Credential check ─────────────────────────────────────────────────────
     if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(401, "Invalid email or password")
-    return schemas.TokenResponse(access_token=create_token(user.id),
-                                  user=schemas.UserResponse.model_validate(user))
+        if user:
+            attempts = (user.failed_login_attempts or 0) + 1
+            user.failed_login_attempts = attempts
+            if attempts >= MAX_LOGIN_ATTEMPTS:
+                from datetime import timedelta
+                user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+                user.failed_login_attempts = 0
+                db.commit()
+                raise HTTPException(
+                    429,
+                    f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes."
+                )
+            db.commit()
+            remaining = MAX_LOGIN_ATTEMPTS - attempts
+            raise HTTPException(401, f"Incorrect password. {remaining} attempt(s) remaining before lockout.")
+        raise HTTPException(401, "No account found with that email address.")
+
+    # ── Success ───────────────────────────────────────────────────────────────
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    db.commit()
+    db.refresh(user)
+    logger.info(f"Login: user id={user.id}")
+    return schemas.TokenResponse(
+        access_token=create_token(user.id, user.token_version or 0),
+        user=schemas.UserResponse.model_validate(user),
+    )
+
+
+@app.post("/auth/logout")
+def logout(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Invalidates the current token by bumping token_version. All existing tokens for this user stop working."""
+    current_user.token_version = (current_user.token_version or 0) + 1
+    db.commit()
+    logger.info(f"Logout: user id={current_user.id}, new token_version={current_user.token_version}")
+    return {"status": "logged out"}
 
 
 # ───────────────────────── USER ─────────────────────────
@@ -150,10 +237,11 @@ def update_profile(
     if payload.preferred_language:
         current_user.preferred_language = payload.preferred_language
     if payload.phone:
-        existing = db.query(models.User).filter(models.User.phone == payload.phone).first()
+        clean_phone = normalize_phone(payload.phone)
+        existing = db.query(models.User).filter(models.User.phone == clean_phone).first()
         if existing and existing.id != current_user.id:
             raise HTTPException(400, "Phone already in use")
-        current_user.phone = payload.phone
+        current_user.phone = clean_phone
     if payload.fcm_token:
         current_user.fcm_token = payload.fcm_token
     db.commit()

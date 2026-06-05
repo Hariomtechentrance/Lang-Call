@@ -284,8 +284,13 @@ class HomeActivity : AppCompatActivity() {
             .setTitle("Logout")
             .setMessage("Are you sure?")
             .setPositiveButton("Logout") { _, _ ->
+                val token = session.bearerToken
                 try { stopService(Intent(this, CallNotificationService::class.java)) } catch (_: Exception) {}
                 session.clear()
+                // Tell the server to invalidate the token (bump token_version) — fire and forget
+                lifecycleScope.launch {
+                    try { RetrofitClient.api.logout(token) } catch (_: Exception) {}
+                }
                 startActivity(Intent(this, LoginActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 })

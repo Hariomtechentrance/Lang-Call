@@ -2,15 +2,53 @@ package com.techentrance.languageapp.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 class SessionManager(context: Context) {
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("langcall_prefs", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = buildPrefs(context)
+
+    companion object {
+        private const val TAG = "SessionManager"
+        private const val PREFS_FILE = "langcall_secure_prefs"
+        private const val KEY_TOKEN = "token"
+        private const val KEY_USER_ID = "user_id"
+        private const val KEY_NAME = "name"
+        private const val KEY_EMAIL = "email"
+        private const val KEY_PHONE = "phone"
+        private const val KEY_LANGUAGE = "language"
+        private const val KEY_SERVER_URL = "server_url"
+
+        private fun buildPrefs(context: Context): SharedPreferences {
+            return try {
+                val masterKey = MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    context,
+                    PREFS_FILE,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                )
+            } catch (e: Exception) {
+                // Should never happen on a normal device, but fall back gracefully
+                Log.e(TAG, "EncryptedSharedPreferences init failed, falling back to plain: ${e.message}")
+                context.getSharedPreferences(PREFS_FILE + "_fallback", Context.MODE_PRIVATE)
+            }
+        }
+    }
 
     var token: String?
         get() = prefs.getString(KEY_TOKEN, null)
         set(v) = prefs.edit().putString(KEY_TOKEN, v).apply()
+
+    var userId: Int?
+        get() = prefs.getInt(KEY_USER_ID, -1).takeIf { it != -1 }
+        set(v) = if (v == null) prefs.edit().remove(KEY_USER_ID).apply()
+                 else prefs.edit().putInt(KEY_USER_ID, v).apply()
 
     var userName: String?
         get() = prefs.getString(KEY_NAME, null)
@@ -33,11 +71,6 @@ class SessionManager(context: Context) {
         get() = prefs.getString(KEY_SERVER_URL, null)
         set(v) = prefs.edit().putString(KEY_SERVER_URL, v).apply()
 
-    var userId: Int?
-        get() = prefs.getInt(KEY_USER_ID, -1).takeIf { it != -1 }
-        set(v) = if (v == null) prefs.edit().remove(KEY_USER_ID).apply()
-                 else prefs.edit().putInt(KEY_USER_ID, v).apply()
-
     val isLoggedIn: Boolean get() = token != null
     val bearerToken: String get() = "Bearer ${token.orEmpty()}"
 
@@ -51,14 +84,4 @@ class SessionManager(context: Context) {
     }
 
     fun clear() = prefs.edit().clear().apply()
-
-    companion object {
-        private const val KEY_TOKEN = "token"
-        private const val KEY_USER_ID = "user_id"
-        private const val KEY_NAME = "name"
-        private const val KEY_EMAIL = "email"
-        private const val KEY_PHONE = "phone"
-        private const val KEY_LANGUAGE = "language"
-        private const val KEY_SERVER_URL = "server_url"
-    }
 }
