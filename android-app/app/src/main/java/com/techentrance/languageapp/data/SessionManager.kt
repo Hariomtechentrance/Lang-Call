@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 
 class SessionManager(context: Context) {
 
@@ -23,19 +23,18 @@ class SessionManager(context: Context) {
 
         private fun buildPrefs(context: Context): SharedPreferences {
             return try {
-                val masterKey = MasterKey.Builder(context)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build()
+                // security-crypto:1.0.0 stable API uses MasterKeys (not MasterKey.Builder)
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
                 EncryptedSharedPreferences.create(
-                    context,
                     PREFS_FILE,
-                    masterKey,
+                    masterKeyAlias,
+                    context,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
             } catch (e: Exception) {
-                // Should never happen on a normal device, but fall back gracefully
-                Log.e(TAG, "EncryptedSharedPreferences init failed, falling back to plain: ${e.message}")
+                // Fall back to plain prefs if Keystore is unavailable (rare on modern devices)
+                Log.e(TAG, "EncryptedSharedPreferences init failed, falling back: ${e.message}")
                 context.getSharedPreferences(PREFS_FILE + "_fallback", Context.MODE_PRIVATE)
             }
         }
