@@ -79,3 +79,20 @@ class CallRecordRequest(BaseModel):
     caller_language: str
     callee_language: str
     duration_seconds: int = 0
+    status: str = "completed"   # completed | missed | timeout
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("New password must contain at least one number")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("New password must contain at least one letter")
+        return v

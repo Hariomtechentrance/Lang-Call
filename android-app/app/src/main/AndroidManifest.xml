@@ -4,14 +4,21 @@
 
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Microphone for translation calls -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Keep CPU alive during calls so mic doesn't stop when screen turns off -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Background notification service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Contacts picker -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!-- Detect incoming regular phone calls (PSTN) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -32,6 +39,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".OnboardingActivity" android:screenOrientation="portrait"/>
+
         <activity android:name=".LoginActivity" android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"/>
 
@@ -47,6 +56,9 @@
             android:turnScreenOn="true"/>
 
         <activity android:name=".CallHistoryActivity" android:screenOrientation="portrait"/>
+
+        <activity android:name=".ChangePasswordActivity" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
 
         <!-- Keeps WebSocket alive for incoming call notifications -->
         <service

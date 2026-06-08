@@ -15,6 +15,7 @@ class WebSocketManager(
     private val onBothConnected: () -> Unit = {},
     private val onReconnecting: (Int) -> Unit = {},
     private val onReconnected: () -> Unit = {},
+    private val onCallTimeout: () -> Unit = {},
     private val onError: (String) -> Unit,
 ) {
     private val TAG = "WebSocketManager"
@@ -66,10 +67,8 @@ class WebSocketManager(
                         currentSlot = json.optString("slot")
                         onConnected(currentSlot)
                     }
-                    "peer_joined" -> {
-                        // Both participants are now in the room
-                        onBothConnected()
-                    }
+                    "peer_joined" -> onBothConnected()
+                    "call_timeout" -> onCallTimeout()
                     "audio" -> {
                         onTranscriptReceived(
                             json.optString("original"),

@@ -48,6 +48,29 @@ interface ApiService {
         @Header("Authorization") token: String,
     ): Response<Map<String, String>>
 
+    @PUT("auth/change-password")
+    suspend fun changePassword(
+        @Header("Authorization") token: String,
+        @Body body: ChangePasswordRequest,
+    ): Response<ChangePasswordResponse>
+
+    @POST("users/block/{phone}")
+    suspend fun blockUser(
+        @Header("Authorization") token: String,
+        @Path("phone") phone: String,
+    ): Response<Map<String, String>>
+
+    @DELETE("users/block/{phone}")
+    suspend fun unblockUser(
+        @Header("Authorization") token: String,
+        @Path("phone") phone: String,
+    ): Response<Map<String, String>>
+
+    @GET("users/blocked")
+    suspend fun getBlockedUsers(
+        @Header("Authorization") token: String,
+    ): Response<BlockedUsersResponse>
+
     @POST("call/record")
     suspend fun saveCallRecord(
         @Header("Authorization") token: String,

@@ -70,6 +70,15 @@ def run_migrations():
     if "locked_until" not in existing:
         additions.append("ALTER TABLE users ADD COLUMN locked_until TIMESTAMP WITH TIME ZONE")
     if additions:
+        pass  # handled below
+
+    # call_records: add status column if missing
+    if "call_records" in inspector.get_table_names():
+        cr_cols = {col["name"] for col in inspector.get_columns("call_records")}
+        if "status" not in cr_cols:
+            additions.append("ALTER TABLE call_records ADD COLUMN status VARCHAR DEFAULT 'completed'")
+
+    if additions:
         with engine.connect() as conn:
             for sql in additions:
                 conn.execute(text(sql))
@@ -219,6 +228,27 @@ def logout(
     return {"status": "logged out"}
 
 
+# ───────────────────────── CHANGE PASSWORD ──────────────
+
+@app.put("/auth/change-password")
+def change_password(
+    payload: schemas.ChangePasswordRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(400, "Current password is incorrect")
+    current_user.password_hash = hash_password(payload.new_password)
+    # Bump token_version so all other sessions are logged out
+    current_user.token_version = (current_user.token_version or 0) + 1
+    db.commit()
+    db.refresh(current_user)
+    return {
+        "status": "password changed",
+        "new_token": create_token(current_user.id, current_user.token_version),
+    }
+
+
 # ───────────────────────── USER ─────────────────────────
 
 @app.get("/users/me", response_model=schemas.UserResponse)
@@ -261,6 +291,52 @@ def find_by_phone(
     return user
 
 
+# ───────────────────────── BLOCK USER ─────────────────────────
+
+@app.post("/users/block/{phone}")
+def block_user(
+    phone: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    clean = normalize_phone(phone)
+    existing = db.query(models.BlockedUser).filter(
+        models.BlockedUser.blocker_id == current_user.id,
+        models.BlockedUser.blocked_phone == clean,
+    ).first()
+    if existing:
+        return {"status": "already blocked"}
+    db.add(models.BlockedUser(blocker_id=current_user.id, blocked_phone=clean))
+    db.commit()
+    return {"status": "blocked"}
+
+
+@app.delete("/users/block/{phone}")
+def unblock_user(
+    phone: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    clean = normalize_phone(phone)
+    db.query(models.BlockedUser).filter(
+        models.BlockedUser.blocker_id == current_user.id,
+        models.BlockedUser.blocked_phone == clean,
+    ).delete()
+    db.commit()
+    return {"status": "unblocked"}
+
+
+@app.get("/users/blocked")
+def get_blocked(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.query(models.BlockedUser).filter(
+        models.BlockedUser.blocker_id == current_user.id
+    ).all()
+    return {"blocked": [r.blocked_phone for r in rows]}
+
+
 @app.get("/languages")
 def get_languages():
     from languages import LANGUAGES
@@ -280,6 +356,16 @@ async def initiate_call(
         raise HTTPException(404, "No LangCall user found with that phone number")
     if callee.id == current_user.id:
         raise HTTPException(400, "You cannot call yourself")
+
+    # Check if callee has blocked the caller
+    caller_phone = current_user.phone or ""
+    if caller_phone:
+        blocked = db.query(models.BlockedUser).filter(
+            models.BlockedUser.blocker_id == callee.id,
+            models.BlockedUser.blocked_phone == caller_phone,
+        ).first()
+        if blocked:
+            raise HTTPException(404, "No LangCall user found with that phone number")
 
     caller_phone = current_user.phone or str(current_user.id)
     room_id = make_room_id(caller_phone, payload.callee_phone)
@@ -351,6 +437,7 @@ def save_call_record(
         caller_language=payload.caller_language,
         callee_language=payload.callee_language,
         duration_seconds=payload.duration_seconds,
+        status=payload.status,
         ended_at=datetime.now(timezone.utc),
     )
     db.add(record)
@@ -385,6 +472,7 @@ def get_call_history(
             "my_language": r.caller_language if is_caller else r.callee_language,
             "direction": "outgoing" if is_caller else "incoming",
             "duration_seconds": r.duration_seconds,
+            "status": r.status or "completed",
             "started_at": r.started_at.isoformat() if r.started_at else "",
         })
     return {"history": result}
@@ -510,6 +598,19 @@ async def ws_call(
                 await peer_ws.send_text(json.dumps({"type": "peer_joined"}))
             except Exception:
                 pass
+    elif slot == "user_a":
+        # First user in room — start a 45-second timeout waiting for peer
+        async def _timeout_watcher():
+            await asyncio.sleep(45)
+            current_room = rooms.get(room_id, {})
+            if "user_b" not in current_room and "user_a" in current_room:
+                try:
+                    await current_room["user_a"].send_text(
+                        json.dumps({"type": "call_timeout", "msg": "No answer — call timed out"})
+                    )
+                except Exception:
+                    pass
+        asyncio.create_task(_timeout_watcher())
 
     try:
         while True:

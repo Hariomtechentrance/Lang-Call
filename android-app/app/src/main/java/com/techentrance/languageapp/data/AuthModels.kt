@@ -76,11 +76,26 @@ data class CallHistoryItem(
     val my_language: String,
     val direction: String,        // "incoming" or "outgoing"
     val duration_seconds: Int,
+    val status: String = "completed",   // completed | missed | timeout
     val started_at: String,
 )
 
 data class CallHistoryResponse(
     val history: List<CallHistoryItem>,
+)
+
+data class ChangePasswordRequest(
+    val current_password: String,
+    val new_password: String,
+)
+
+data class ChangePasswordResponse(
+    val status: String,
+    val new_token: String,
+)
+
+data class BlockedUsersResponse(
+    val blocked: List<String>,
 )
 
 val INDIAN_LANGUAGES = listOf(

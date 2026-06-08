@@ -3,10 +3,14 @@ package com.techentrance.languageapp
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +21,8 @@ import com.techentrance.languageapp.data.CallRecordRequest
 import com.techentrance.languageapp.data.RetrofitClient
 import com.techentrance.languageapp.data.SessionManager
 import com.techentrance.languageapp.databinding.ActivityCallBinding
+import com.techentrance.languageapp.db.AppDatabase
+import com.techentrance.languageapp.db.TranscriptEntity
 import kotlinx.coroutines.launch
 
 class CallActivity : AppCompatActivity() {
@@ -46,6 +52,26 @@ class CallActivity : AppCompatActivity() {
     private var callActive = false
     private var muted = false
     private var speakerOn = false
+    private var callStatus = "timeout"   // updated to "completed" when both connect
+
+    // WakeLock — keeps CPU alive so mic recording doesn't stop when screen turns off
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // Audio focus
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // Phone call came in — mute ourselves
+                if (!muted) toggleMute()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Focus returned — unmute if we auto-muted
+                if (muted) toggleMute()
+            }
+        }
+    }
 
     // Timer
     private val timerHandler = Handler(Looper.getMainLooper())
@@ -55,9 +81,6 @@ class CallActivity : AppCompatActivity() {
     // Speaking animation
     private val dotsHandler = Handler(Looper.getMainLooper())
     private var dotsRunnable: Runnable? = null
-    private var speakingActive = false
-
-    // Dots animation frames
     private val dotFrames = arrayOf("●○○", "●●○", "●●●", "○●●", "○○●")
     private var dotFrame = 0
 
@@ -89,6 +112,9 @@ class CallActivity : AppCompatActivity() {
         binding.tvYourLanguage.text = language.replaceFirstChar { it.uppercase() }
         binding.tvTheirLanguage.text = calleeLanguage.ifEmpty { "?" }.replaceFirstChar { it.uppercase() }
 
+        acquireWakeLock()
+        requestAudioFocus()
+
         audioPlayer = AudioPlayer()
         audioStreamer = AudioStreamer { chunk -> if (callActive && !muted) wsManager.sendAudio(chunk) }
 
@@ -99,12 +125,57 @@ class CallActivity : AppCompatActivity() {
         }
 
         setupWebSocket()
-
         binding.btnEndCall.setOnClickListener { endCall() }
         binding.btnEndCall2.setOnClickListener { endCall() }
         binding.btnMute.setOnClickListener { toggleMute() }
         binding.btnSpeaker.setOnClickListener { toggleSpeaker() }
     }
+
+    // ── WakeLock ─────────────────────────────────────────────────────────────
+
+    private fun acquireWakeLock() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "LangCall::CallWakeLock"
+        ).apply { acquire(60 * 60 * 1000L) }   // max 1 hour
+    }
+
+    // ── Audio Focus ──────────────────────────────────────────────────────────
+
+    private fun requestAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val attrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attrs)
+                .setOnAudioFocusChangeListener(audioFocusListener)
+                .build()
+            audioManager.requestAudioFocus(audioFocusRequest!!)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusListener,
+                AudioManager.STREAM_VOICE_CALL,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+    }
+
+    private fun releaseAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusListener)
+        }
+        audioManager.mode = AudioManager.MODE_NORMAL
+    }
+
+    // ── WebSocket ────────────────────────────────────────────────────────────
 
     private fun setupWebSocket() {
         wsManager = WebSocketManager(
@@ -119,27 +190,33 @@ class CallActivity : AppCompatActivity() {
                     if (original.isNotEmpty()) {
                         binding.tvOriginal.text = original
                         binding.tvTranslated.text = translated.ifEmpty { "—" }
+                        saveTranscriptLine(original, translated)
                     }
                 }
             },
             onConnected = { slot ->
                 runOnUiThread {
-                    val waiting = if (slot == "user_a") "Waiting for $calleeName to join…" else "Connected — speak now"
+                    val waiting = if (slot == "user_a") "Ringing… waiting for $calleeName" else "Connected — speak now"
                     setStatus(waiting, connected = true)
                     binding.tvLive.visibility = View.VISIBLE
-                    if (slot == "user_b") {
-                        // Both users now connected — start timer
-                        startTimer()
-                        binding.tvCallTimer.visibility = View.VISIBLE
-                    }
+                    if (slot == "user_b") { startTimer(); binding.tvCallTimer.visibility = View.VISIBLE }
                     requestMicAndStream()
                 }
             },
             onBothConnected = {
                 runOnUiThread {
+                    callStatus = "completed"
                     startTimer()
                     binding.tvCallTimer.visibility = View.VISIBLE
                     setStatus("Call active — speak in ${language.replaceFirstChar { it.uppercase() }}", connected = true)
+                }
+            },
+            onCallTimeout = {
+                runOnUiThread {
+                    callStatus = "timeout"
+                    setStatus("No answer — call timed out", connected = false)
+                    Toast.makeText(this, "$calleeName didn't answer", Toast.LENGTH_LONG).show()
+                    Handler(Looper.getMainLooper()).postDelayed({ endCall() }, 2000)
                 }
             },
             onReconnecting = { attempt ->
@@ -162,7 +239,7 @@ class CallActivity : AppCompatActivity() {
             },
         )
 
-        setStatus("Connecting to server…", connected = false)
+        setStatus("Connecting…", connected = false)
         wsManager.connect(
             wsBaseUrl = RetrofitClient.WS_BASE_URL,
             roomId = roomId,
@@ -174,11 +251,8 @@ class CallActivity : AppCompatActivity() {
     private fun requestMicAndStream() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
-        ) {
-            beginStreaming()
-        } else {
-            micPermission.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        ) beginStreaming()
+        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     private fun beginStreaming() {
@@ -186,9 +260,9 @@ class CallActivity : AppCompatActivity() {
         callActive = true
     }
 
-    // ── Mute ────────────────────────────────────────────────────────────
+    // ── Mute ────────────────────────────────────────────────────────────────
 
-    private fun toggleMute() {
+    fun toggleMute() {
         muted = !muted
         binding.btnMute.text = if (muted) "🔇 Unmute" else "🎤 Mute"
         binding.btnMute.setBackgroundColor(
@@ -197,7 +271,7 @@ class CallActivity : AppCompatActivity() {
         binding.tvMicIcon.text = if (muted) "🔇" else "🎤"
     }
 
-    // ── Speaker toggle ───────────────────────────────────────────────────
+    // ── Speaker ──────────────────────────────────────────────────────────────
 
     private fun toggleSpeaker() {
         speakerOn = !speakerOn
@@ -208,84 +282,94 @@ class CallActivity : AppCompatActivity() {
         )
     }
 
-    // ── Call timer ───────────────────────────────────────────────────────
+    // ── Timer ────────────────────────────────────────────────────────────────
 
     private fun startTimer() {
-        if (callStartTime != 0L) return      // already started
+        if (callStartTime != 0L) return
         callStartTime = System.currentTimeMillis()
-        val runnable = object : Runnable {
+        val r = object : Runnable {
             override fun run() {
-                val elapsed = (System.currentTimeMillis() - callStartTime) / 1000
-                val mm = elapsed / 60
-                val ss = elapsed % 60
-                binding.tvCallTimer.text = "%02d:%02d".format(mm, ss)
+                val e = (System.currentTimeMillis() - callStartTime) / 1000
+                binding.tvCallTimer.text = "%02d:%02d".format(e / 60, e % 60)
                 timerHandler.postDelayed(this, 1000)
             }
         }
-        timerRunnable = runnable
-        timerHandler.post(runnable)
+        timerRunnable = r
+        timerHandler.post(r)
     }
 
     private fun stopTimer(): Int {
         timerRunnable?.let { timerHandler.removeCallbacks(it) }
         timerRunnable = null
-        return if (callStartTime != 0L)
-            ((System.currentTimeMillis() - callStartTime) / 1000).toInt()
-        else 0
+        return if (callStartTime != 0L) ((System.currentTimeMillis() - callStartTime) / 1000).toInt() else 0
     }
 
-    // ── Speaking animation ───────────────────────────────────────────────
+    // ── Speaking animation ───────────────────────────────────────────────────
 
     private fun showSpeakingAnimation() {
         binding.tvSpeakingDots.visibility = View.VISIBLE
-        speakingActive = true
         dotsRunnable?.let { dotsHandler.removeCallbacks(it) }
-
-        val runnable = object : Runnable {
+        val r = object : Runnable {
             override fun run() {
-                binding.tvSpeakingDots.text = dotFrames[dotFrame % dotFrames.size]
-                dotFrame++
+                binding.tvSpeakingDots.text = dotFrames[dotFrame++ % dotFrames.size]
                 dotsHandler.postDelayed(this, 200)
             }
         }
-        dotsRunnable = runnable
-        dotsHandler.post(runnable)
-
-        // Hide after 3 seconds (enough for the TTS to finish playing)
+        dotsRunnable = r
+        dotsHandler.post(r)
         dotsHandler.postDelayed({
             dotsRunnable?.let { dotsHandler.removeCallbacks(it) }
             binding.tvSpeakingDots.visibility = View.GONE
-            speakingActive = false
         }, 3000)
     }
 
-    // ── End call ─────────────────────────────────────────────────────────
+    // ── Transcript saving ────────────────────────────────────────────────────
+
+    private fun saveTranscriptLine(original: String, translated: String) {
+        lifecycleScope.launch {
+            try {
+                val db = AppDatabase.get(this@CallActivity)
+                db.transcriptDao().insert(
+                    TranscriptEntity(
+                        roomId = roomId,
+                        otherPersonName = calleeName,
+                        originalText = original,
+                        translatedText = translated,
+                        speakerSlot = "them",
+                    )
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    // ── End call ─────────────────────────────────────────────────────────────
 
     private fun endCall() {
-        if (!callActive && callStartTime == 0L) {
-            finish()
-            return
+        if (!callActive && callStartTime == 0L && callStatus == "timeout") {
+            cleanup(); finish(); return
         }
         callActive = false
         val durationSeconds = stopTimer()
         dotsRunnable?.let { dotsHandler.removeCallbacks(it) }
-
         audioStreamer.stopStreaming()
         wsManager.disconnect()
         audioPlayer.release()
-
-        // Restore to earpiece
-        audioManager.isSpeakerphoneOn = false
-
         saveCallRecord(durationSeconds)
+        cleanup()
         finish()
+    }
+
+    private fun cleanup() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        releaseAudioFocus()
+        audioManager.isSpeakerphoneOn = false
     }
 
     private fun saveCallRecord(durationSeconds: Int) {
         val myId = session.userId ?: return
         val myName = session.userName ?: return
         if (calleeId == -1) return
-
         lifecycleScope.launch {
             try {
                 RetrofitClient.api.saveCallRecord(
@@ -299,13 +383,14 @@ class CallActivity : AppCompatActivity() {
                         caller_language = language,
                         callee_language = calleeLanguage,
                         duration_seconds = durationSeconds,
+                        status = callStatus,
                     )
                 )
             } catch (_: Exception) {}
         }
     }
 
-    // ── Status dot ───────────────────────────────────────────────────────
+    // ── Status ───────────────────────────────────────────────────────────────
 
     private fun setStatus(msg: String, connected: Boolean) {
         binding.tvStatus.text = msg
@@ -315,7 +400,7 @@ class CallActivity : AppCompatActivity() {
         )
     }
 
-    // ── Lifecycle ────────────────────────────────────────────────────────
+    // ── Lifecycle ────────────────────────────────────────────────────────────
 
     override fun onDestroy() {
         super.onDestroy()
@@ -325,6 +410,6 @@ class CallActivity : AppCompatActivity() {
         if (::audioStreamer.isInitialized) audioStreamer.stopStreaming()
         if (::wsManager.isInitialized) wsManager.disconnect()
         if (::audioPlayer.isInitialized) audioPlayer.release()
-        if (::audioManager.isInitialized) audioManager.isSpeakerphoneOn = false
+        cleanup()
     }
 }

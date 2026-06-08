@@ -15,13 +15,13 @@
         android:gravity="center_vertical"
         android:padding="14dp">
 
-        <!-- Direction icon -->
+        <!-- Direction / status icon -->
         <TextView
             android:id="@+id/tvDirection"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:gravity="center"
-            android:textSize="18sp"
+            android:textSize="20sp"
             android:layout_marginEnd="12dp"/>
 
         <!-- Info block -->
@@ -57,13 +57,31 @@
         </LinearLayout>
 
         <!-- Duration -->
-        <TextView
-            android:id="@+id/tvDuration"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#FF4CAF50"
-            android:textSize="13sp"
-            android:textStyle="bold"/>
+            android:orientation="vertical"
+            android:gravity="center_horizontal">
+
+            <TextView
+                android:id="@+id/tvDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FF4CAF50"
+                android:textSize="13sp"
+                android:textStyle="bold"/>
+
+            <!-- Block button -->
+            <TextView
+                android:id="@+id/btnBlock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚫 Block"
+                android:textColor="#FFFF5722"
+                android:textSize="11sp"
+                android:paddingTop="6dp"
+                android:background="?attr/selectableItemBackgroundBorderless"/>
+        </LinearLayout>
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

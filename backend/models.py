@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.sql import func
 from database import Base
 
@@ -47,5 +47,15 @@ class CallRecord(Base):
     caller_language = Column(String, nullable=False)
     callee_language = Column(String, nullable=False)
     duration_seconds = Column(Integer, default=0)
+    status = Column(String, default="completed")   # completed | missed | timeout
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class BlockedUser(Base):
+    __tablename__ = "blocked_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_id = Column(Integer, nullable=False, index=True)   # user who did the blocking
+    blocked_phone = Column(String, nullable=False)             # phone number that is blocked
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

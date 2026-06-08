@@ -5,6 +5,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -44,7 +46,7 @@ class CallHistoryActivity : AppCompatActivity() {
                     if (items.isEmpty()) {
                         binding.layoutEmpty.visibility = View.VISIBLE
                     } else {
-                        binding.rvHistory.adapter = HistoryAdapter(items)
+                        binding.rvHistory.adapter = HistoryAdapter(items.toMutableList())
                     }
                 } else {
                     binding.layoutEmpty.visibility = View.VISIBLE
@@ -56,7 +58,26 @@ class CallHistoryActivity : AppCompatActivity() {
         }
     }
 
-    private inner class HistoryAdapter(private val items: List<CallHistoryItem>) :
+    private fun blockUser(phone: String, name: String, onDone: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle("Block $name?")
+            .setMessage("$name will no longer be able to call you on LangCall.")
+            .setPositiveButton("Block") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        RetrofitClient.api.blockUser(session.bearerToken, phone)
+                        Toast.makeText(this@CallHistoryActivity, "$name blocked", Toast.LENGTH_SHORT).show()
+                        onDone()
+                    } catch (_: Exception) {
+                        Toast.makeText(this@CallHistoryActivity, "Could not block user", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private inner class HistoryAdapter(private val items: MutableList<CallHistoryItem>) :
         RecyclerView.Adapter<HistoryAdapter.VH>() {
 
         inner class VH(v: View) : RecyclerView.ViewHolder(v) {
@@ -65,6 +86,7 @@ class CallHistoryActivity : AppCompatActivity() {
             val tvLanguages: TextView = v.findViewById(R.id.tvLanguages)
             val tvDate: TextView = v.findViewById(R.id.tvDate)
             val tvDuration: TextView = v.findViewById(R.id.tvDuration)
+            val btnBlock: TextView = v.findViewById(R.id.btnBlock)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -77,30 +99,49 @@ class CallHistoryActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val item = items[position]
+            val isMissed = item.status == "missed" || item.status == "timeout"
 
-            holder.tvDirection.text = if (item.direction == "outgoing") "📤" else "📥"
+            // Direction icon based on status
+            holder.tvDirection.text = when {
+                isMissed -> "📵"
+                item.direction == "outgoing" -> "📤"
+                else -> "📥"
+            }
+
             holder.tvOtherName.text = item.other_name
-            holder.tvLanguages.text = "${item.my_language.replaceFirstChar { it.uppercase() }} ↔ ${item.other_language.replaceFirstChar { it.uppercase() }}"
+            holder.tvOtherName.setTextColor(
+                if (isMissed) 0xFFFF5722.toInt() else 0xFFFFFFFF.toInt()
+            )
+            holder.tvLanguages.text =
+                "${item.my_language.replaceFirstChar { it.uppercase() }} ↔ ${item.other_language.replaceFirstChar { it.uppercase() }}"
             holder.tvDate.text = formatDate(item.started_at)
-            holder.tvDuration.text = formatDuration(item.duration_seconds)
+            holder.tvDuration.text = when {
+                isMissed -> "Missed"
+                else -> formatDuration(item.duration_seconds)
+            }
+            holder.tvDuration.setTextColor(
+                if (isMissed) 0xFFFF5722.toInt() else 0xFF4CAF50.toInt()
+            )
+
+            holder.btnBlock.setOnClickListener {
+                // We need a phone number to block — use other_name as fallback label
+                val pos = holder.adapterPosition
+                blockUser(item.other_name, item.other_name) {
+                    items.removeAt(pos)
+                    notifyItemRemoved(pos)
+                }
+            }
         }
 
         private fun formatDuration(seconds: Int): String {
             if (seconds == 0) return "—"
-            val mm = seconds / 60
-            val ss = seconds % 60
-            return "%02d:%02d".format(mm, ss)
+            return "%02d:%02d".format(seconds / 60, seconds % 60)
         }
 
         private fun formatDate(iso: String): String {
             return try {
-                // Simple: take date portion from ISO string (2024-01-15T10:30:00...)
-                val part = iso.substringBefore('T')
-                val time = iso.substringAfter('T').take(5)
-                "$part  $time"
-            } catch (_: Exception) {
-                iso
-            }
+                "${iso.substringBefore('T')}  ${iso.substringAfter('T').take(5)}"
+            } catch (_: Exception) { iso }
         }
     }
 }

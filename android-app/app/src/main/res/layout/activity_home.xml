@@ -1,10 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FFF3F4F6"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:background="#FFF3F4F6">
+
+    <!-- Offline banner (hidden when online) -->
+    <TextView
+        android:id="@+id/tvOfflineBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚠ No internet connection"
+        android:textColor="@color/white"
+        android:textSize="13sp"
+        android:gravity="center"
+        android:paddingVertical="8dp"
+        android:background="#FFF44336"
+        android:visibility="gone"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -27,6 +46,18 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
+                <!-- Avatar circle with initials -->
+                <TextView
+                    android:id="@+id/tvAvatar"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:gravity="center"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/circle_bg"
+                    android:layout_marginEnd="12dp"/>
+
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -38,7 +69,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Hi, User 👋"
-                        android:textSize="22sp"
+                        android:textSize="20sp"
                         android:textStyle="bold"
                         android:textColor="@color/white"/>
 
@@ -46,12 +77,23 @@
                         android:id="@+id/tvUserPhone"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="13sp"
+                        android:textSize="12sp"
                         android:textColor="#CCffffff"
                         android:layout_marginTop="2dp"/>
                 </LinearLayout>
 
-                <!-- Settings gear — opens server URL + about dialog -->
+                <!-- Dark mode toggle -->
+                <ImageButton
+                    android:id="@+id/btnDarkMode"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:src="@android:drawable/ic_menu_day"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:tint="@color/white"
+                    android:layout_marginEnd="4dp"
+                    android:contentDescription="Toggle dark mode"/>
+
+                <!-- Settings gear -->
                 <ImageButton
                     android:id="@+id/btnSettings"
                     android:layout_width="36dp"
@@ -59,7 +101,7 @@
                     android:src="@android:drawable/ic_menu_preferences"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:tint="@color/white"
-                    android:layout_marginEnd="8dp"
+                    android:layout_marginEnd="4dp"
                     android:contentDescription="Settings"/>
 
                 <com.google.android.material.button.MaterialButton
@@ -112,19 +154,36 @@
                         android:textColor="@color/text_secondary"
                         android:layout_marginBottom="14dp"/>
 
-                    <com.google.android.material.textfield.TextInputLayout
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="Their phone number (+91XXXXXXXXXX)"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
                         android:layout_marginBottom="14dp">
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etCallPhone"
-                            android:layout_width="match_parent"
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:inputType="phone"
-                            android:maxLines="1"/>
-                    </com.google.android.material.textfield.TextInputLayout>
+                            android:layout_weight="1"
+                            android:hint="Their phone number (+91XXXXXXXXXX)"
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etCallPhone"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="phone"
+                                android:maxLines="1"/>
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <ImageButton
+                            android:id="@+id/btnPickContact"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:src="@android:drawable/ic_menu_myplaces"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:layout_marginStart="8dp"
+                            android:contentDescription="Pick from contacts"/>
+                    </LinearLayout>
 
                     <TextView
                         android:id="@+id/tvCallStatus"
@@ -270,6 +329,39 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- QUICK ACTIONS ROW -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="14dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnInviteFriend"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:text="📨 Invite Friend"
+                    android:textSize="12sp"
+                    app:cornerRadius="10dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    app:strokeColor="@color/purple_700"
+                    android:textColor="@color/purple_700"
+                    android:layout_marginEnd="8dp"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnChangePassword"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:text="🔑 Change Password"
+                    android:textSize="12sp"
+                    app:cornerRadius="10dp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    app:strokeColor="@color/purple_700"
+                    android:textColor="@color/purple_700"/>
+            </LinearLayout>
+
             <!-- INFO CARD -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -305,4 +397,6 @@
 
         </LinearLayout>
     </LinearLayout>
-</ScrollView>
+
+    </ScrollView>
+</LinearLayout>
